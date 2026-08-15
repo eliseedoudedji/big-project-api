@@ -3,6 +3,7 @@ import { Throttle } from '@nestjs/throttler';
 import { KeyService } from './key.service';
 import { VerifyKeyDto } from './dto/verify-key.dto';
 import { clientIpOf } from '../geo/geo.service';
+import type { ClientIdentity } from '../visitors/visitors.service';
 
 @Controller('key')
 @Throttle({ default: { limit: 10, ttl: 60000 } })
@@ -15,9 +16,10 @@ export class KeyController {
     @Headers() headers: Record<string, string>,
     @Body() dto: VerifyKeyDto,
   ) {
-    return this.keyService.verify(
-      clientIpOf(ip, headers['x-forwarded-for']),
-      dto.key,
-    );
+    const identity: ClientIdentity = {
+      ip: clientIpOf(ip, headers['x-forwarded-for']),
+      clientId: headers['x-client-id']?.trim() || null,
+    };
+    return this.keyService.verify(identity, dto.key);
   }
 }

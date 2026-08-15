@@ -1,7 +1,10 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { VisitorsService } from '../visitors/visitors.service';
+import {
+  VisitorsService,
+  type ClientIdentity,
+} from '../visitors/visitors.service';
 
 @Injectable()
 export class KeyService {
@@ -11,12 +14,17 @@ export class KeyService {
     private readonly visitorsService: VisitorsService,
   ) {}
 
-  async verify(ip: string, key: string): Promise<{ ok: boolean; correct: number }> {
-    const visitor = await this.visitorsService.getOrCreateByIp(ip);
+  async verify(
+    identity: ClientIdentity,
+    key: string,
+  ): Promise<{ ok: boolean; correct: number }> {
+    const visitor = await this.visitorsService.getOrCreate(identity);
     if (visitor.banned) return { ok: false, correct: 0 };
     if (visitor.vpn) throw new ForbiddenException('VPN détecté');
 
-    const expected = (this.config.get<string>('ACCESS_KEY') ?? '').toUpperCase();
+    const expected = (
+      this.config.get<string>('ACCESS_KEY') ?? ''
+    ).toUpperCase();
     const entered = (key ?? '').toUpperCase();
     const ok = entered.length > 0 && entered === expected;
 

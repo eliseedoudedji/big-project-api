@@ -18,12 +18,24 @@ export type VisitorMeta = {
   acceptLanguage?: string | null;
 };
 
+/**
+ * Identité d'un visiteur côté serveur.
+ * `clientId` (UUID stocké en localStorage) prime sur l'IP : il permet de
+ * distinguer plusieurs appareils derrière une même IP (proxy/NAT/Render).
+ */
+export type ClientIdentity = {
+  ip: string;
+  clientId?: string | null;
+};
+
 export type ProbePayload = {
   probe?: Record<string, unknown> | null;
   signals?: Record<string, unknown> | null;
   vpn?: boolean;
   vpnReason?: string | null;
 };
+
+type Resolved = { visitor: Visitor; isNew: boolean };
 
 @Injectable()
 export class VisitorsService {
@@ -35,24 +47,72 @@ export class VisitorsService {
     private readonly geoService: GeoService,
   ) {}
 
-  async getOrCreateByIp(ip: string, meta: VisitorMeta = {}) {
+  /**
+   * Résout le visiteur : priorité au `clientId`, puis à l'IP en fallback
+   * (compatibilité avec les visiteurs enregistrés avant cette version).
+   */
+  async getOrCreate(
+    identity: ClientIdentity,
+    meta: VisitorMeta = {},
+  ): Promise<Visitor> {
+    const { visitor } = await this.resolve(identity, meta);
+    return visitor;
+  }
+
+  async getOrCreateByIp(ip: string, meta: VisitorMeta = {}): Promise<Visitor> {
+    return this.getOrCreate({ ip }, meta);
+  }
+
+  private async resolve(
+    identity: ClientIdentity,
+    meta: VisitorMeta,
+  ): Promise<Resolved> {
+    const { ip, clientId } = identity;
+    const metaData = {
+      userAgent: meta.userAgent ?? null,
+      acceptLanguage: meta.acceptLanguage ?? null,
+    };
+
+    if (clientId) {
+      const byClient = await this.prisma.visitor.findUnique({
+        where: { clientId },
+      });
+      if (byClient) {
+        const visitor = await this.prisma.visitor.update({
+          where: { id: byClient.id },
+          data: { ip, ...mergeMeta(byClient, metaData) },
+        });
+        return { visitor, isNew: false };
+      }
+
+      const byIp = await this.prisma.visitor.findUnique({ where: { ip } });
+      if (byIp) {
+        const visitor = await this.prisma.visitor.update({
+          where: { id: byIp.id },
+          data: { clientId, ...mergeMeta(byIp, metaData) },
+        });
+        return { visitor, isNew: false };
+      }
+
+      const visitor = await this.prisma.visitor.create({
+        data: { ip, clientId, ...metaData },
+      });
+      return { visitor, isNew: true };
+    }
+
     const existing = await this.prisma.visitor.findUnique({ where: { ip } });
     if (existing) {
-      return this.prisma.visitor.update({
-        where: { ip },
-        data: {
-          userAgent: meta.userAgent ?? existing.userAgent,
-          acceptLanguage: meta.acceptLanguage ?? existing.acceptLanguage,
-        },
+      const visitor = await this.prisma.visitor.update({
+        where: { id: existing.id },
+        data: mergeMeta(existing, metaData),
       });
+      return { visitor, isNew: false };
     }
-    return this.prisma.visitor.create({
-      data: {
-        ip,
-        userAgent: meta.userAgent ?? null,
-        acceptLanguage: meta.acceptLanguage ?? null,
-      },
+
+    const visitor = await this.prisma.visitor.create({
+      data: { ip, ...metaData },
     });
+    return { visitor, isNew: true };
   }
 
   recordEvent(
@@ -76,16 +136,18 @@ export class VisitorsService {
   }
 
   async recordEventForIp(
-    ip: string,
+    identity: ClientIdentity,
     type: string,
     payload?: Record<string, unknown>,
   ): Promise<void> {
-    const visitor = await this.getOrCreateByIp(ip);
+    const visitor = await this.getOrCreate(identity);
     this.recordEvent(visitor.id, type, payload);
   }
 
-  async incrementAttempts(ip: string): Promise<{ attempts: number }> {
-    const visitor = await this.getOrCreateByIp(ip);
+  async incrementAttempts(
+    identity: ClientIdentity,
+  ): Promise<{ attempts: number }> {
+    const visitor = await this.getOrCreate(identity);
     const updated = await this.prisma.visitor.update({
       where: { id: visitor.id },
       data: { attempts: { increment: 1 } },
@@ -94,8 +156,11 @@ export class VisitorsService {
     return { attempts: updated.attempts };
   }
 
-  async saveStep(ip: string, step: string): Promise<{ step: string }> {
-    const visitor = await this.getOrCreateByIp(ip);
+  async saveStep(
+    identity: ClientIdentity,
+    step: string,
+  ): Promise<{ step: string }> {
+    const visitor = await this.getOrCreate(identity);
     await this.prisma.visitor.update({
       where: { id: visitor.id },
       data: { step },
@@ -104,10 +169,10 @@ export class VisitorsService {
   }
 
   async recordProbe(
-    ip: string,
+    identity: ClientIdentity,
     payload: ProbePayload,
   ): Promise<{ vpn: boolean; vpnReason: string | null }> {
-    const visitor = await this.getOrCreateByIp(ip);
+    const visitor = await this.getOrCreate(identity);
 
     const vpn = payload.vpn === true;
     const vpnReason =
@@ -146,48 +211,34 @@ export class VisitorsService {
   }
 
   async register(
-    ip: string,
+    identity: ClientIdentity,
     meta: VisitorMeta,
     geo: GeoResult,
   ): Promise<{ visitor: Visitor; isNew: boolean }> {
-    const existing = await this.prisma.visitor.findUnique({ where: { ip } });
-    const isNew = !existing;
-    const visitor = existing
-      ? await this.prisma.visitor.update({
-          where: { ip },
-          data: {
-            userAgent: meta.userAgent ?? existing.userAgent,
-            acceptLanguage: meta.acceptLanguage ?? existing.acceptLanguage,
-            countryCode: geo.countryCode || existing.countryCode,
-            countryName: geo.countryName || existing.countryName,
-            geoRaw: geoRawOf(existing, geo),
-          },
-        })
-      : await this.prisma.visitor.create({
-          data: {
-            ip,
-            userAgent: meta.userAgent ?? null,
-            acceptLanguage: meta.acceptLanguage ?? null,
-            countryCode: geo.countryCode || null,
-            countryName: geo.countryName || null,
-            geoRaw: JSON.stringify({
-              ip: geo.ip,
-              countryCode: geo.countryCode,
-              countryName: geo.countryName,
-            }),
-          },
-        });
+    const { visitor, isNew } = await this.resolve(identity, meta);
+
+    const updated = await this.prisma.visitor.update({
+      where: { id: visitor.id },
+      data: {
+        countryCode: geo.countryCode || visitor.countryCode,
+        countryName: geo.countryName || visitor.countryName,
+        geoRaw: geoRawOf(visitor, geo),
+      },
+    });
 
     if (isNew)
-      this.recordEvent(visitor.id, 'registration', {
+      this.recordEvent(updated.id, 'registration', {
         geo: geo.countryCode ?? null,
       });
 
-    return { visitor, isNew };
+    return { visitor: updated, isNew };
   }
 
-  async claimCountry(ip: string, code: string): Promise<ClaimResult> {
-    const visitor = await this.getOrCreateByIp(ip);
+  async claimCountry(
+    identity: ClientIdentity,
+    code: string,
+  ): Promise<ClaimResult> {
+    const visitor = await this.getOrCreate(identity);
     const realCountry = visitor.countryName ?? 'inconnu';
 
     if (visitor.banned) {
@@ -202,7 +253,7 @@ export class VisitorsService {
 
     let geoCode = visitor.countryCode;
     if (!geoCode) {
-      const geo = await this.geoService.lookup(ip);
+      const geo = await this.geoService.lookup(identity.ip);
       await this.prisma.visitor.update({
         where: { id: visitor.id },
         data: {
@@ -261,6 +312,16 @@ export class VisitorsService {
     const value = Number(this.config.get<string>('MAX_STRIKES') ?? 3);
     return Number.isFinite(value) && value > 0 ? value : 3;
   }
+}
+
+function mergeMeta(
+  existing: { userAgent: string | null; acceptLanguage: string | null },
+  meta: { userAgent: string | null; acceptLanguage: string | null },
+): { userAgent: string | null; acceptLanguage: string | null } {
+  return {
+    userAgent: meta.userAgent ?? existing.userAgent,
+    acceptLanguage: meta.acceptLanguage ?? existing.acceptLanguage,
+  };
 }
 
 function geoRawOf(

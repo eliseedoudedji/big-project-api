@@ -16,6 +16,7 @@ enum Status {
 model Visitor {
   id             String        @id @default(cuid())
   ip             String        @unique
+  clientId       String?       @unique
   userAgent      String?
   acceptLanguage String?
   countryCode    String?

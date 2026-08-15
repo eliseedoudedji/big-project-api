@@ -1,7 +1,10 @@
 import { Body, Controller, Get, Headers, Ip, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { GeoService } from './geo.service';
-import { VisitorsService } from '../visitors/visitors.service';
+import {
+  VisitorsService,
+  type ClientIdentity,
+} from '../visitors/visitors.service';
 import { ClaimCountryDto } from './dto/claim-country.dto';
 import { ProbeDto } from './dto/probe.dto';
 import { StepDto } from './dto/step.dto';
@@ -13,6 +16,14 @@ const parseUtcOffset = (v: string | undefined): number | null => {
   const n = Number(v);
   return Number.isFinite(n) && Math.abs(n) <= 86400 ? n : null;
 };
+
+const identityOf = (
+  ip: string,
+  headers: Record<string, string>,
+): ClientIdentity => ({
+  ip,
+  clientId: headers['x-client-id']?.trim() || null,
+});
 
 @Controller('geo')
 @Throttle({ default: { limit: 30, ttl: 60000 } })
@@ -39,7 +50,7 @@ export class GeoController {
       headers['accept-language'] ?? null,
     );
     const { visitor } = await this.visitorsService.register(
-      clientIp,
+      identityOf(clientIp, headers),
       {
         userAgent: headers['user-agent'] ?? null,
         acceptLanguage: headers['accept-language'] ?? null,
@@ -61,7 +72,9 @@ export class GeoController {
   @Post('attempt')
   async attempt(@Ip() ip: string, @Headers() headers: Record<string, string>) {
     const clientIp = clientIpOf(ip, headers['x-forwarded-for']);
-    return this.visitorsService.incrementAttempts(clientIp);
+    return this.visitorsService.incrementAttempts(
+      identityOf(clientIp, headers),
+    );
   }
 
   @Post('step')
@@ -71,7 +84,10 @@ export class GeoController {
     @Body() dto: StepDto,
   ) {
     const clientIp = clientIpOf(ip, headers['x-forwarded-for']);
-    return this.visitorsService.saveStep(clientIp, dto.step);
+    return this.visitorsService.saveStep(
+      identityOf(clientIp, headers),
+      dto.step,
+    );
   }
 
   @Post('event')
@@ -82,7 +98,7 @@ export class GeoController {
   ) {
     const clientIp = clientIpOf(ip, headers['x-forwarded-for']);
     await this.visitorsService.recordEventForIp(
-      clientIp,
+      identityOf(clientIp, headers),
       dto.type,
       dto.payload ?? undefined,
     );
@@ -96,7 +112,10 @@ export class GeoController {
     @Body() dto: ClaimCountryDto,
   ) {
     const clientIp = clientIpOf(ip, headers['x-forwarded-for']);
-    return this.visitorsService.claimCountry(clientIp, dto.code.toUpperCase());
+    return this.visitorsService.claimCountry(
+      identityOf(clientIp, headers),
+      dto.code.toUpperCase(),
+    );
   }
 
   @Post('probe')
@@ -106,6 +125,6 @@ export class GeoController {
     @Body() dto: ProbeDto,
   ) {
     const clientIp = clientIpOf(ip, headers['x-forwarded-for']);
-    return this.visitorsService.recordProbe(clientIp, dto);
+    return this.visitorsService.recordProbe(identityOf(clientIp, headers), dto);
   }
 }
