@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Status {
+  ACTIVE
+  INTEGRATED
+  BANNED
+}
+
+model Visitor {
+  id             String        @id @default(cuid())
+  ip             String        @unique
+  clientId       String?       @unique
+  userAgent      String?
+  acceptLanguage String?
+  countryCode    String?
+  countryName    String?
+  claimedCountry String?
+  vpn            Boolean       @default(false)
+  vpnReason      String?
+  strikes        Int           @default(0)
+  banned         Boolean       @default(false)
+  status         Status        @default(ACTIVE)
+  attempts       Int           @default(0)
+  step           String?
+  keySolved      Boolean       @default(false)
+  note           String?
+  geoRaw         String?
+  fingerprint    String?
+  firstSeenAt    DateTime      @default(now())
+  lastSeenAt     DateTime      @updatedAt
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  events         VisitorEvent[]
+
+  @@index([status])
+  @@index([lastSeenAt])
+  @@index([banned])
+}
+
+model VisitorEvent {
+  id        String   @id @default(cuid())
+  visitor   Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  visitorId String
+  type      String
+  payload   String?
+  createdAt DateTime @default(now())
+
+  @@index([visitorId])
+  @@index([type])
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         String   @default("admin")
+  createdAt    DateTime @default(now())
+}

@@ -12,7 +12,7 @@ const logger = new Logger('Bootstrap');
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
-    'DATABASE_URL manquante : configurez une base PostgreSQL (ex. postgresql://user:password@host:5432/cworld)',
+    'DATABASE_URL manquante : configurez une base (SQLite local "file:./dev.db" ou PostgreSQL "postgresql://...")',
   );
 }
 

@@ -21,7 +21,11 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "prisma:generate:local": "prisma generate --schema prisma/sqlite/schema.prisma",
+    "prisma:migrate:local": "prisma migrate dev --schema prisma/sqlite/schema.prisma",
+    "prisma:deploy:local": "prisma migrate deploy --schema prisma/sqlite/schema.prisma",
+    "prisma:studio:local": "prisma studio --schema prisma/sqlite/schema.prisma"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

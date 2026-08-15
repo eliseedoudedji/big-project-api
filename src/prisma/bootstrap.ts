@@ -15,7 +15,10 @@ const logger = new Logger('Bootstrap');
  */
 export async function ensureDatabaseSchema(): Promise<void> {
   const root = process.cwd();
-  const schemaPath = join(root, 'prisma', 'schema.prisma');
+  const isSqlite = (process.env.DATABASE_URL ?? '').startsWith('file:');
+  const schemaPath = isSqlite
+    ? join(root, 'prisma', 'sqlite', 'schema.prisma')
+    : join(root, 'prisma', 'schema.prisma');
   if (!existsSync(schemaPath)) {
     logger.warn(
       `Schéma Prisma introuvable à ${schemaPath} : migrations ignorées.`,
@@ -35,10 +38,12 @@ export async function ensureDatabaseSchema(): Promise<void> {
       env: process.env,
       timeout: 120_000,
     });
-    logger.log('Migrations PostgreSQL appliquées.');
+    logger.log(
+      `Migrations appliquées (${isSqlite ? 'SQLite' : 'PostgreSQL'}).`,
+    );
   } catch (err) {
     logger.error(
-      `Échec des migrations PostgreSQL : ${(err as Error).message}`,
+      `Échec des migrations (${isSqlite ? 'SQLite' : 'PostgreSQL'}) : ${(err as Error).message}`,
     );
     throw err;
   }
