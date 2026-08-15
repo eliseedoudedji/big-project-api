@@ -1,68 +1,45 @@
-import { PrismaClient } from '@prisma/client';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { Logger } from '@nestjs/common';
 
-export const SCHEMA_STATEMENTS: string[] = [
-  `CREATE TABLE IF NOT EXISTS "Visitor" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "ip" TEXT NOT NULL,
-    "userAgent" TEXT,
-    "acceptLanguage" TEXT,
-    "countryCode" TEXT,
-    "countryName" TEXT,
-    "claimedCountry" TEXT,
-    "vpn" BOOLEAN NOT NULL DEFAULT false,
-    "vpnReason" TEXT,
-    "strikes" INTEGER NOT NULL DEFAULT 0,
-    "banned" BOOLEAN NOT NULL DEFAULT false,
-    "status" TEXT NOT NULL DEFAULT 'ACTIVE',
-    "attempts" INTEGER NOT NULL DEFAULT 0,
-    "step" TEXT,
-    "keySolved" BOOLEAN NOT NULL DEFAULT false,
-    "note" TEXT,
-    "geoRaw" TEXT,
-    "fingerprint" TEXT,
-    "firstSeenAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "lastSeenAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS "Visitor_ip_key" ON "Visitor"("ip")`,
-  `CREATE INDEX IF NOT EXISTS "Visitor_status_idx" ON "Visitor"("status")`,
-  `CREATE INDEX IF NOT EXISTS "Visitor_lastSeenAt_idx" ON "Visitor"("lastSeenAt")`,
-  `CREATE INDEX IF NOT EXISTS "Visitor_banned_idx" ON "Visitor"("banned")`,
-  `CREATE TABLE IF NOT EXISTS "VisitorEvent" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "visitorId" TEXT NOT NULL,
-    "type" TEXT NOT NULL,
-    "payload" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "VisitorEvent_visitorId_fkey"
-      FOREIGN KEY ("visitorId") REFERENCES "Visitor"("id")
-      ON DELETE CASCADE ON UPDATE CASCADE
-  )`,
-  `CREATE INDEX IF NOT EXISTS "VisitorEvent_visitorId_idx" ON "VisitorEvent"("visitorId")`,
-  `CREATE INDEX IF NOT EXISTS "VisitorEvent_type_idx" ON "VisitorEvent"("type")`,
-  `CREATE TABLE IF NOT EXISTS "Admin" (
-    "id" TEXT NOT NULL PRIMARY KEY,
-    "username" TEXT NOT NULL,
-    "passwordHash" TEXT NOT NULL,
-    "role" TEXT NOT NULL DEFAULT 'admin',
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS "Admin_username_key" ON "Admin"("username")`,
-];
+const execFileAsync = promisify(execFile);
+
+const logger = new Logger('Bootstrap');
 
 /**
- * Crée les tables si elles n'existent pas. Déterministe, idempotent,
- * indispensable pour les bases SQLite éphémères en déploiement serverless.
+ * Applique les migrations Prisma au démarrage si le schéma est absent.
+ * Idempotent et indispensable pour les déploiements serverless (Render/Vercel)
+ * où la commande de build ne garantit pas l'exécution de `prisma migrate deploy`.
  */
 export async function ensureDatabaseSchema(): Promise<void> {
-  const prisma = new PrismaClient();
-  await prisma.$connect();
+  const root = process.cwd();
+  const schemaPath = join(root, 'prisma', 'schema.prisma');
+  if (!existsSync(schemaPath)) {
+    logger.warn(
+      `Schéma Prisma introuvable à ${schemaPath} : migrations ignorées.`,
+    );
+    return;
+  }
+
+  const prismaBin = join(root, 'node_modules', '.bin', 'prisma');
+  const cmd = existsSync(prismaBin) ? prismaBin : 'npx';
+  const args = existsSync(prismaBin)
+    ? ['migrate', 'deploy', '--schema', schemaPath]
+    : ['prisma', 'migrate', 'deploy', '--schema', schemaPath];
+
   try {
-    for (const statement of SCHEMA_STATEMENTS) {
-      await prisma.$executeRawUnsafe(statement);
-    }
-  } finally {
-    await prisma.$disconnect();
+    await execFileAsync(cmd, args, {
+      cwd: root,
+      env: process.env,
+      timeout: 120_000,
+    });
+    logger.log('Migrations PostgreSQL appliquées.');
+  } catch (err) {
+    logger.error(
+      `Échec des migrations PostgreSQL : ${(err as Error).message}`,
+    );
+    throw err;
   }
 }

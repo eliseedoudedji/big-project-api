@@ -11,8 +11,9 @@ import { ensureDatabaseSchema } from './prisma/bootstrap';
 const logger = new Logger('Bootstrap');
 
 if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL =
-    process.env.VERCEL === '1' ? 'file:/tmp/c-world.db' : 'file:./dev.db';
+  throw new Error(
+    'DATABASE_URL manquante : configurez une base PostgreSQL (ex. postgresql://user:password@host:5432/cworld)',
+  );
 }
 
 function corsOrigins(config: ConfigService): string[] | string {
