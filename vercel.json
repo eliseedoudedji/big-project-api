@@ -1,6 +1,9 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "buildCommand": "npx prisma migrate deploy && npm run build",
+  "outputDirectory": "dist",
+  "framework": null,
   "builds": [
     {
       "src": "dist/main.js",
