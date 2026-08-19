@@ -1,19 +1,11 @@
 {
-  "version": 2,
   "installCommand": "npm install",
   "buildCommand": "npx prisma migrate deploy && npm run build",
-  "outputDirectory": "dist",
   "framework": null,
-  "builds": [
+  "rewrites": [
     {
-      "src": "dist/main.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "dist/main.js"
+      "source": "/(.*)",
+      "destination": "/api"
     }
   ]
 }
