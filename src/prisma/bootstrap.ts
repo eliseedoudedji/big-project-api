@@ -14,6 +14,11 @@ const logger = new Logger('Bootstrap');
  * où la commande de build ne garantit pas l'exécution de `prisma migrate deploy`.
  */
 export async function ensureDatabaseSchema(): Promise<void> {
+  if (process.env.VERCEL === '1') {
+    logger.log('Vercel détecté : migrations déjà appliquées au build, skip.');
+    return;
+  }
+
   const root = process.cwd();
   const isSqlite = (process.env.DATABASE_URL ?? '').startsWith('file:');
   const schemaPath = isSqlite
