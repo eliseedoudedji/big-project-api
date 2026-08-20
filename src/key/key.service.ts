@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -20,7 +20,6 @@ export class KeyService {
   ): Promise<{ ok: boolean; correct: number }> {
     const visitor = await this.visitorsService.getOrCreate(identity);
     if (visitor.banned) return { ok: false, correct: 0 };
-    if (visitor.vpn) throw new ForbiddenException('VPN détecté');
 
     const expected = (
       this.config.get<string>('ACCESS_KEY') ?? ''

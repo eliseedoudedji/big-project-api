@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Logger } from '@nestjs/common';
+import { PrismaService } from './prisma.service';
 
 const execFileAsync = promisify(execFile);
 
@@ -46,5 +47,25 @@ export async function ensureDatabaseSchema(): Promise<void> {
       `Échec des migrations (${isSqlite ? 'SQLite' : 'PostgreSQL'}) : ${(err as Error).message}`,
     );
     throw err;
+  }
+}
+
+/**
+ * Réinitialise les faux positifs VPN (webrtc_proxy) pour les visiteurs non bannis.
+ * Les vrais VPN seront redétectés au prochain `postProbe`.
+ */
+export async function resetFalseVpnFlags(prisma: PrismaService): Promise<void> {
+  try {
+    const result = await prisma.visitor.updateMany({
+      where: { vpn: true, banned: false },
+      data: { vpn: false, vpnReason: null },
+    });
+    if (result.count > 0) {
+      logger.log(
+        `${result.count} visiteur(s) débloqué(s) (reset faux positifs VPN).`,
+      );
+    }
+  } catch (err) {
+    logger.warn(`Reset VPN ignoré : ${(err as Error).message}`);
   }
 }

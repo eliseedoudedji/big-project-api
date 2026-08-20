@@ -6,7 +6,8 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AuthService } from './auth/auth.service';
-import { ensureDatabaseSchema } from './prisma/bootstrap';
+import { ensureDatabaseSchema, resetFalseVpnFlags } from './prisma/bootstrap';
+import { PrismaService } from './prisma/prisma.service';
 
 const logger = new Logger('Bootstrap');
 
@@ -51,6 +52,9 @@ async function createApp(): Promise<NestExpressApplication> {
   app.setGlobalPrefix('api');
 
   await app.get(AuthService).ensureDefaultAdmin();
+
+  const prisma = app.get(PrismaService);
+  await resetFalseVpnFlags(prisma);
 
   return app;
 }
