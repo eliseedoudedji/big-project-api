@@ -33,7 +33,12 @@ async function createApp(): Promise<NestExpressApplication> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      crossOriginEmbedderPolicy: false,
+    }),
+  );
   app.enableCors({ origin: corsOrigins(config), credentials: false });
 
   const trustProxy = config.get<string>('TRUST_PROXY');
