@@ -63,21 +63,4 @@ async function bootstrapLocal(): Promise<void> {
   logger.log(`API C-WORLD démarrée sur http://localhost:${port}/api`);
 }
 
-type Handler = (req: unknown, res: unknown) => void;
-
-let cached: Handler | null = null;
-
-export default async function handler(
-  req: unknown,
-  res: unknown,
-): Promise<void> {
-  if (!cached) {
-    const app = await createApp();
-    cached = app.getHttpAdapter().getInstance() as Handler;
-  }
-  cached(req, res);
-}
-
-if (process.env.VERCEL !== '1') {
-  void bootstrapLocal();
-}
+void bootstrapLocal();
